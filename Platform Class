@@ -1,0 +1,101 @@
+local SoundService = game:GetService("SoundService")
+local Theme = SoundService.Theme
+local Songs = game.Workspace.Songs
+
+local Platform = {}
+Platform.__index = Platform
+
+--Constants for materials
+local ON_Material = Enum.Material.Neon
+local OFF_Material = Enum.Material.SmoothPlastic
+local ON_Color = Color3.fromRGB(0, 255, 0)
+local OFF_Color = Color3.fromRGB(255, 0, 0)
+
+function Platform.new(folder, Team, Direction)
+	local self = setmetatable({}, Platform)
+	
+	print("Preparing platform")
+	self.Folder = folder
+	self.Pad = folder:WaitForChild("Pad")
+	self.Floor = folder:WaitForChild("Floor")
+	self.Screen = folder:WaitForChild("Screen")
+	self.ScreenLight = self.Folder:WaitForChild("ScreenLight"):FindFirstChild("Light")
+	self.FrontLight = self.Folder:WaitForChild("FrontLight"):FindFirstChild("Light")
+	self.ThemeName = self.Folder.Screen.SurfaceGui:WaitForChild("Name")
+	self.ThemeImage = self.Folder.Screen:WaitForChild("Image")
+	self.Team = Team
+	self.DefaultContent = self.ThemeImage.ColorMapContent
+	self.Queue = {}
+	self.Direction = Direction
+	
+	print("Prepared platform")
+	
+	return self	
+end
+
+function Platform:ToggleFrontLight(toggle : boolean)
+	self.FrontLight.Enabled = toggle
+end
+
+function Platform:ToggleScreenLight(toggle : boolean)
+	self.ScreenLight.Enabled = toggle
+end
+
+function Platform:TogglePad(toggle : boolean)
+	self.Pad.CanTouch = false
+	self.Pad.Material = toggle and ON_Material or OFF_Material
+end
+
+
+function Platform:ActivatePresentation(Name)
+	local song = Songs:FindFirstChild(Name)
+		
+	if not song then
+		warn("No song with name: " .. Name)
+		return
+	end
+	
+	local songID = song.SoundId
+	local imageID = song.Decal.ColorMapContent
+	
+	
+	self.ThemeName.Text = Name
+	Theme.SoundId = songID
+	self.ThemeImage.ColorMapContent = imageID
+	
+	self:ToggleFrontLight(true)
+	self:ToggleScreenLight(true)
+	
+	Theme:Play()
+	Theme.Ended:Wait()
+end
+
+function Platform:DeactivatePresentation()
+	self:ToggleImage(false)
+	self:ToggleFrontLight(false)
+	self:ToggleScreenLight(false)
+	Theme:Stop()
+end
+
+function Platform:ToggleImage(toggle : boolean)
+	self.ThemeImage.Transparency = toggle and 0 or 1
+	self.ThemeName.Visible = toggle
+end
+
+function Platform:Reset()
+
+	self:ToggleFrontLight(false)
+	self:ToggleScreenLight(false)
+	self.ThemeName.Text = ""
+	self:ToggleImage(true)
+	self.ThemeImage.ColorMapContent = self.DefaultContent
+	self.Queue = {}
+end
+
+function Platform:ConnectPad(callback)
+	self.Pad.Touched:Connect(function(hit)
+		callback(hit, self)
+	end)
+end
+
+return Platform

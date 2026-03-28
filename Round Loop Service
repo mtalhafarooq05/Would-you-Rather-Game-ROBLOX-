@@ -1,0 +1,384 @@
+local RoundService = {}
+
+local RS = game:GetService("ReplicatedStorage")
+local Services
+local LightsSound = game:GetService("SoundService").Lights
+local Lights = {}
+local Gate = game.Workspace.MainPlatform.Gate
+local BattlePart = game.Workspace.MainPlatform.BattlePart
+
+local PlaylistService = require(game.ServerScriptService.SongQueue)
+
+local GameState = RS:FindFirstChild("GameState") or Instance.new("Folder", RS)
+GameState.Name = "GameState"
+
+local LIGHT_OFF = Color3.fromRGB(0, 0, 0)
+local LIGHT_ON = Color3.fromRGB(255, 255, 255)
+
+local Lighting = game:GetService("Lighting")
+
+local SongCount = #game.Workspace.Songs:GetChildren()
+local songs = game.Workspace.Songs:GetChildren()
+
+--=================Helpers===================
+local function SetStatus(Status : String, Time : number)
+	if Status then
+		GameState:SetAttribute("Status", Status)
+	end
+
+	if Time then
+		GameState:SetAttribute("TimeLeft", Time)
+	end
+end
+
+
+
+local function GetRandomSong(Selected)
+	
+	local newSong = nil
+	
+	while newSong == nil or newSong.Name == Selected do
+		local randomIndex = math.random(1, SongCount)
+		newSong = songs[randomIndex]
+	end
+	
+	return newSong.Name
+	
+end
+
+--==================Main======================
+
+
+function RoundService.Init(sharedService)
+	Services = sharedService
+	
+	for _, light in pairs(game.Workspace.Maps.Lobby:WaitForChild("Light"):GetDescendants()) do
+		if light:IsA("PointLight") or light:IsA("SpotLight") or light:IsA("SurfaceLight") then
+			table.insert(Lights, light)
+			light.Enabled = true
+		end
+	end
+	
+	SetStatus("Waiting For Players ...", 0)
+
+	
+
+end
+
+function RoundService.Start()
+	print("RoundService Started")
+	task.spawn(RoundService.GameLoop)
+end
+
+function RoundService.ToggleGameLights()
+	for _, light in pairs(Lights) do
+		light.Enabled = not light.Enabled
+	end
+end
+
+function RoundService.ResetPlayerSpeed()
+	for _, player in pairs(game.Players:GetPlayers()) do
+		if player.Character then
+			local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				humanoid.WalkSpeed = 16
+			end
+		end
+	end
+end
+
+
+local BattlePhaseSet = nil
+local PreBattleQueue = {}
+function RoundService.PreBattlePhase()
+
+	PreBattleQueue = {}
+	BattlePart.CanTouch = true
+	BattlePhaseSet = BattlePart.Touched:Connect(function(hit)
+		if hit.Parent and hit.Parent:FindFirstChild("Humanoid") then
+			local player = game.Players:GetPlayerFromCharacter(hit.Parent)
+			if player and player.Team and player.Team.Name == "Lobby" and not PreBattleQueue[player] then
+				PreBattleQueue[player] = player
+			end
+		end
+	end)
+	
+end
+
+function RoundService.RemoveFromPreBattleQueue(plr)
+	
+	if PreBattleQueue[plr] then
+		PreBattleQueue[plr] = nil
+	end
+	
+end
+
+function RoundService.GiveWeaponsToTeam(Team : Team)
+	
+	for i, v in ipairs(game.Players:GetChildren()) do
+		if v.Team == Team then
+			Services.PlayerService.GiveWeapon(v)
+		end
+	end
+	
+end
+
+function RoundService.RemoveWeapons()
+	
+	for i, v in ipairs(game.Players:GetChildren()) do
+		Services.PlayerService.RemoveWeapon(v)
+	end
+	
+end
+
+function RoundService.RemoveTools()
+	
+	for i, v in ipairs(game.Players:GetChildren()) do
+		Services.PlayerService.RemoveTools(v)
+	end
+	
+end
+
+function RoundService.CheckTeamCount(Team : Team)
+	
+	return #Team:GetPlayers()
+	
+end
+
+function RoundService.TeleportToLobby(Team : Team)
+	
+	for i, v in ipairs(Team:GetPlayers()) do
+		v.Team = game.Teams.Lobby
+		Services.PlayerService.TeleportPlayers(game.Workspace.LobbySpawn.Position, v)
+	end
+end
+
+function RoundService.GivePotions(Team : Team)
+	
+	for i, v in ipairs(Team:GetPlayers()) do
+		Services.PlayerService.GivePotions(v)
+	end
+	
+end
+
+local function award(plrs)
+	for _, v in pairs(plrs) do
+		local plr = game.Players:FindFirstChild(v.Name)
+		if plr then
+			local leaderstats = plr:FindFirstChild("leaderstats")
+			if leaderstats then
+				local Cash = leaderstats:FindFirstChild("Cash")
+				if Cash then
+					local wins = leaderstats:FindFirstChild("Wins")
+					if wins then
+						wins.Value += 1
+					end
+				end
+			end
+
+		end
+	end
+end
+
+
+function RoundService.GetPlayListSong()
+	local nextEntry = PlaylistService.GetOldest()
+	if nextEntry then
+		local Event = game.ReplicatedStorage:WaitForChild("SongQueueEvent")
+		Event:FireClient(nextEntry.Owner, "SongPlayed", nextEntry.ID)
+		return nextEntry
+	end
+	return nil
+end
+
+function RoundService.Respawn(Team : Team)
+	
+	for i, v in ipairs(Team:GetPlayers()) do
+		v.Team = game.Teams.Lobby
+		if v and v.Character then
+			v:LoadCharacterAsync()
+		end
+	end
+end
+
+local function GiveTeamUI()
+
+	for i, plr in ipairs(game.Players:GetChildren()) do
+		local Team = plr.Team
+		if Team ~= game.Teams.Lobby then
+			local teamName = Team.Name
+			local teamUI = game.ServerStorage["Team UI"].Team:Clone()
+			teamUI.Parent = plr.Character
+			teamUI.Name = "TeamUI"
+			teamUI.Adornee = plr.Character.Head or nil
+			teamUI:FindFirstChild(teamName).Visible = true
+		end
+	end
+	
+
+end
+
+
+function RoundService.GameLoop()
+	while true do
+		
+		Gate.CanCollide = true
+		
+		SetStatus("Intermission", 5)
+		
+		print("Game loop starting")
+		
+		for i = 5, 0, -1 do
+			task.wait(1)
+			SetStatus(nil, i)
+		end
+		
+		SetStatus("Intermission", 0)
+		
+		LightsSound:Play()
+		--task.wait(1)
+		Services.MapService.Reset()
+		Lighting.Ambient = LIGHT_OFF
+		
+		
+		task.wait(2)
+		
+		local owner = nil
+		local redSong = "505 - Arctic Monkeys"
+		local blueSong = "A New Kind Of Love (Demo) - Frou Frou"
+		local playListSong = RoundService.GetPlayListSong()
+		if playListSong	 then
+			redSong = playListSong.Red
+			blueSong = playListSong.Blue
+			owner = playListSong.Owner
+		else
+			redSong = GetRandomSong(nil)
+			blueSong = GetRandomSong(redSong)
+		end
+		
+		
+		
+		if owner then
+			game.Workspace.MainPlatform["Middle Screen"].SurfaceGui.ThemeName.Text = "Song Choosen By: " .. owner.Name
+		end
+		
+		Services.MapService.PlayRoundSequence(redSong, blueSong)
+
+
+		Gate.CanCollide = false
+		
+		RoundService.PreBattlePhase()
+		
+		SetStatus("Choosing", 10)
+		for i = 10, 0, -1 do
+			SetStatus("Choosing", i)
+			task.wait(1)
+			Gate.CanCollide = false
+		end
+		LightsSound:Play()
+
+		if BattlePhaseSet then
+			BattlePhaseSet:Disconnect()
+			BattlePhaseSet = nil
+		end
+		BattlePart.CanTouch = false
+		
+		Services.PlayerService.TeleportPlayers(game.Workspace.LobbySpawn.Position, PreBattleQueue)
+
+		Gate.CanCollide = true
+
+		
+		
+		
+		
+		
+		SetStatus("Fight", 60)
+		
+		task.spawn(function()
+			GiveTeamUI()
+		end)
+		
+		task.wait(0.2)
+		Lighting.Ambient = LIGHT_ON
+		Services.PlayerService.SetSpeed(16, true)
+		
+				
+		RoundService.GiveWeaponsToTeam(game.Teams.Red)
+		RoundService.GivePotions(game.Teams.Red)
+
+		RoundService.GiveWeaponsToTeam(game.Teams.Blue)
+		RoundService.GivePotions(game.Teams.Blue)		
+		
+		
+		
+		
+		local winningTeam = nil
+		for i = 60, 0, -1 do
+			
+			SetStatus("Fight", i)
+			--task.wait(10000)
+			
+			local blueCount = RoundService.CheckTeamCount(game.Teams.Blue)
+			local redCount = RoundService.CheckTeamCount(game.Teams.Red)
+			
+			if blueCount == 0 and redCount == 0 then
+				break
+			end
+			
+			if blueCount <= 0 or redCount <= 0 then
+				winningTeam = blueCount > 0 and game.Teams.Blue or game.Teams.Red
+				break
+			end
+			
+			task.wait(1)
+			
+		end
+		
+		
+		Services.PlayerService.RemoveConnections()
+		
+		
+		if not winningTeam then
+			
+			SetStatus("Draw!", 0)
+			task.wait(4)
+			
+			RoundService.Respawn(game.Teams.Blue)
+			RoundService.Respawn(game.Teams.Red)
+			
+			
+		elseif winningTeam == game.Teams.Blue then
+			Services.MapService.RedPlatform:DeactivatePresentation()
+			SetStatus("Blue Team Wins!", 0)
+			Services.MapService.BluePlatform:ActivatePresentation(blueSong)
+			Services.MapService.BluePlatform:DeactivatePresentation()
+
+			local winningPlrs = Services.MapService.BluePlatform.Queue
+			award(winningPlrs)
+			--RoundService.TeleportToLobby(winningTeam)
+			RoundService.Respawn(game.Teams.Blue)
+		elseif winningTeam == game.Teams.Red then
+			Services.MapService.BluePlatform:DeactivatePresentation()
+			SetStatus("Red Team Wins!", 0)
+			Services.MapService.RedPlatform:ActivatePresentation(redSong)
+			Services.MapService.RedPlatform:DeactivatePresentation()
+			local winningPlrs = Services.MapService.RedPlatform.Queue
+			award(winningPlrs)
+			--RoundService.TeleportToLobby(winningTeam)
+			RoundService.Respawn(game.Teams.Red)
+	
+		end
+				
+		--RoundService.RemoveTools()
+		
+		
+		
+		Services.MapService.Reset()
+		
+		game.Workspace.MainPlatform["Middle Screen"].SurfaceGui.ThemeName.Text = "Choose A Song"
+		task.wait(1)
+
+	end
+end
+
+return RoundService

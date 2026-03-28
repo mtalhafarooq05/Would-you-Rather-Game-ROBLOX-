@@ -1,0 +1,58 @@
+local ServerService = {}
+
+
+function ServerService.Init()
+	
+	game.ReplicatedStorage.Remotes.Announce.onServerEvent:Connect(function(plr, msg)
+		game.ReplicatedStorage.Remotes.Announce:FireAllClients(msg)
+	end)
+	
+	game.ReplicatedStorage.Remotes.Attack.OnServerEvent:Connect(function(plr, enemy, sound)
+		if plr.Name == enemy.Name then return end
+		
+		local enemyPlr = game.Players:FindFirstChild(enemy.Name)
+		if enemyPlr then
+			if plr.Team == enemyPlr.Team then return end
+			
+			local character = enemyPlr.Character
+			if character  then
+				local humanoid = character:FindFirstChild("Humanoid")
+				enemyPlr:SetAttribute("LastPlayerHit", plr.Name)
+				if plr.Character:GetAttribute("InRage") then
+					humanoid:TakeDamage(30)
+				else
+					humanoid:TakeDamage(20)
+				end
+
+			end
+		else
+			local humanoid = enemy:FindFirstChild("Humanoid")
+			
+			if plr.Character:GetAttribute("InRage") then
+				humanoid:TakeDamage(30)
+			else
+				humanoid:TakeDamage(20)
+			end
+		end
+		
+		local s = game.SoundService["Attack Sound"]:FindFirstChild(sound)
+		if s then
+			print("Sound Playd")
+			local s2 = s
+			s2:Play()
+			--s2.Parent = game.SoundService.Bin
+			----task.wait(0.1)
+			--s2:Play()
+			--task.wait(1)
+			--s2:Destroy()
+		else
+			print("Sound Not Found")
+		end
+		
+	end)
+	
+	
+end
+
+
+return ServerService

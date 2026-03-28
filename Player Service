@@ -1,0 +1,415 @@
+local PlayerService = {}
+local Players = game:GetService("Players")
+local Teams = game:GetService("Teams")
+local HitBox = game.ReplicatedStorage:WaitForChild("HitBox")
+local Services = nil
+
+
+local PlayerSessions = {} 
+
+local Connections = {}
+
+local DataManager = require(game.ServerScriptService.DataManager)
+
+
+local function SetUpHitBox(player : Player)
+	print("Setting Up hitbox")
+	local character = player.Character
+	if not character then return end
+	local hrp = character:WaitForChild("HumanoidRootPart")
+	if not hrp then return end
+	local hitBox = HitBox:Clone()
+	hitBox.Parent = character
+	hitBox.CFrame = hrp.CFrame
+	hitBox.Anchored = false
+	hitBox.Massless = true
+	hitBox.CanCollide = false
+	HitBox.Name = "HitBox"
+
+
+	local weld = Instance.new("Weld")
+	weld.Part0 = hrp
+	weld.Part1 = hitBox
+	weld.Parent = hitBox
+	weld.C0 = CFrame.new(0, 0, -0.7)
+	print("done setting up hitbox")
+end
+
+function PlayerService.GiveWeapon(plr)
+	
+	local weapon = plr:GetAttribute("Equipped")
+	if not weapon then
+		weapon = "Baseball Bat"
+	end
+	
+	local weaponTool = game.ServerScriptService.Weapons:FindFirstChild(weapon)
+	if not weaponTool  then
+		weaponTool = game.ServerScriptService.Weapons:FindFirstChild("Baseball Bat")
+	end
+	
+	local w = weaponTool:Clone()
+	w.Parent = plr.Backpack
+	
+end
+
+
+local function LoadPotion(plr, Potion_Name)
+	
+	local Potion = game.ServerStorage.Potions:FindFirstChild(Potion_Name) :: Tool
+	if not Potion then
+		return
+	end
+	
+	if not plr:GetAttribute(Potion_Name) or plr:GetAttribute(Potion_Name) < 1 then
+		return
+	end
+	
+	local w = Potion:Clone() :: Tool
+	w.Parent = plr.Backpack
+	w.RequiresHandle = false
+	
+	local Particles = {}
+	
+	local function ClearGivenParticles()
+		
+		for _, v in pairs(Particles) do
+			if not v then continue end
+			v:Destroy()
+		end
+		
+		Particles = {}
+		
+	end
+		
+	local function GiveParticles(EMIT : boolean)
+		local Effect = game:GetService("ServerStorage").Effects:FindFirstChild(Potion_Name)
+		if not Effect then
+			return
+		end
+		
+		for _, v in ipairs(Effect:GetDescendants()) do
+			if v:IsA("ParticleEmitter") then
+				local clone = v:Clone() :: ParticleEmitter
+				
+				if EMIT then
+					clone.Enabled = false
+				end
+				
+				clone.Parent = plr.Character[v.Parent.Name]
+				if EMIT then
+					--clone.Enabled = true
+					--clone.Rate = 0
+					clone:Emit(clone.Rate)
+				end
+				table.insert(Particles, clone)
+			end
+		end
+	end
+	
+	
+	w.Activated:Connect(function()
+		print("USING TOOL")
+		Services.InventoryService.RemoveItem(plr, Potion_Name, "Potion")
+		task.spawn(function()
+			game.SoundService["Potions Sound"]:FindFirstChild(w.Name):Play()
+		end)
+		
+		local _task = task.spawn(function()
+			--GiveParticles()
+			
+			if Potion_Name == "ELECTRIC" then
+				GiveParticles()
+				local hum = plr.Character:FindFirstChild("Humanoid")
+				if hum then
+					hum.WalkSpeed = 25
+				end
+				print("GIVEN WALKSPEED")
+				task.wait(90)
+				print("CLEARED WALKSPEED")
+				hum.WalkSpeed = 16
+				ClearGivenParticles()
+				
+			elseif Potion_Name == "RAGE" then
+				GiveParticles()
+				local hum = plr.Character:FindFirstChild("Humanoid")
+				if hum then
+					hum.Parent:SetAttribute("InRage", true)
+				end
+				print("GIVEN RAGE")
+				task.wait(60)
+				print("CLEARED RAGE")
+				hum.Parent:SetAttribute("InRage", false)
+				ClearGivenParticles()
+				
+			elseif Potion_Name == "HEALTH" then
+				GiveParticles(true)
+				local hum = plr.Character:FindFirstChild("Humanoid")
+				print("INCREASING HEALTH")
+				if hum then
+					print("INCREASED HEALTH")
+					hum.Health = math.min(hum.Health + 30, hum.MaxHealth)
+				else
+					print("HEALTH POTION DID NOT FIND PLAYER " .. plr.Name)
+				end
+				task.wait(5)
+				ClearGivenParticles()
+			end
+		end)
+			
+		table.insert(Connections, _task)
+		
+		print("USED TOOL")
+		w:Destroy()
+	end)
+	
+	
+end
+
+
+function PlayerService.GivePotions(plr)
+	
+	LoadPotion(plr, "RAGE")
+	LoadPotion(plr, "ELECTRIC")
+	LoadPotion(plr, "HEALTH")
+	
+end
+
+
+
+function PlayerService.RemoveWeapon(plr)
+	local weapon = plr.Backpack:FindFirstChildOfClass("Tool") or plr.Character and plr.Character:FindFirstChildOfClass("Tool")
+	if weapon then
+		weapon:SetAttribute("IsDestroying", true)
+		task.delay(2, function()
+			weapon:Destroy()
+		end)
+		
+	end
+end
+
+function PlayerService.RemoveParticles(plr)
+	
+	for _, v in pairs(plr.Character:GetDescendants()) do
+		if v:IsA("ParticleEmitter") then
+			v:Destroy()
+		end
+	end
+	
+end
+
+function PlayerService.RemoveConnections()
+	for _, v in pairs(Connections) do
+		if v then
+			task.cancel(v)
+		end
+	end
+end
+
+function PlayerService.RemoveTools(plr)
+	
+	if not plr.Character then return end
+	
+	PlayerService.RemoveParticles(plr)
+	
+	for _, v in pairs(plr.Backpack:GetChildren()) do
+		if v:IsA("Tool") then
+			v:Destroy()
+		end
+	end
+	
+	for _, v in pairs(plr.Character:GetChildren()) do
+		if v:IsA("Tool") then
+			v:Destroy()
+		end
+	end
+end
+
+
+local function GiveTitle(plr) --Equip Title
+	local TitlesFolder = game.ReplicatedStorage.WeaponDatabase.Titles
+	local TitleName = plr:GetAttribute("EquippedTitle")
+	
+	if TitleName and TitleName == "NONE" then
+		if not plr.Character then return end
+		local oldTitle = plr.Character:FindFirstChild("Title")
+		if oldTitle then
+			oldTitle:Destroy()
+		end
+		return
+	end
+	
+	if TitleName then
+		local Title = TitlesFolder:FindFirstChild(TitleName)
+		if Title then
+			if not plr.Character then return end
+			local oldTitle = plr.Character:FindFirstChild("Title")
+			if oldTitle then
+				oldTitle:Destroy()
+			end
+			local TitleClone = Title:Clone() :: BillboardGui
+			TitleClone.Parent = plr.Character
+			TitleClone.Name = "Title"
+			TitleClone.Adornee = plr.Character.Head or nil
+		end
+	end
+end
+
+
+local function OnCharacterAdded(character, player)
+	local humanoid = character:WaitForChild("Humanoid")
+	local hrp = character:WaitForChild("HumanoidRootPart")
+	player:SetAttribute("LastPlayerHit", "None")
+	
+	SetUpHitBox(player)
+	GiveTitle(player)
+	
+	-- Handle Death
+	humanoid.Died:Connect(function()
+		print(player.Name .. " died")
+		humanoid.WalkSpeed = 16
+
+		if Teams:FindFirstChild("Lobby") then
+			player.Team = Teams.Lobby
+		end
+		
+		local LastPlayerHit = player:GetAttribute("LastPlayerHit")
+		if LastPlayerHit then
+			local LastPlayerHitPlr = game.Players:FindFirstChild(LastPlayerHit)
+			if LastPlayerHitPlr then
+				local leaderstats = LastPlayerHitPlr:FindFirstChild("leaderstats")
+				if leaderstats then
+					local kills = leaderstats:FindFirstChild("Kills")
+					if kills then
+						kills.Value += 1
+						game.ReplicatedStorage.Remotes.AddKill:FireAllClients({player1 = LastPlayerHitPlr.Name, player2 = player.Name})
+					end
+				end
+			end
+		end
+		
+		
+	end)
+	
+	
+end
+
+
+
+local function SetupPlayer(player)
+	if PlayerSessions[player] then return end -- Prevent double setup
+
+	--player:SetAttribute("Equipped", 'Baseball Bat')	
+
+	print("Setting up " .. player.Name)
+	local connections = {}
+
+	
+
+	player.Team = Teams.Lobby
+	-- Connect CharacterAdded
+	local charConn = player.CharacterAdded:Connect(function(char)
+		if Teams:FindFirstChild("Lobby") then
+			player.Team = Teams.Lobby
+		end
+		OnCharacterAdded(char, player)
+		
+	end)
+	table.insert(connections, charConn)
+
+	-- Check if character already exists (for players who loaded before script)
+	if player.Character then
+		task.spawn(function()
+			OnCharacterAdded(player.Character, player)
+		end)
+	end
+	
+	-- Add Changed Event for Title Equipped
+	
+	player:GetAttributeChangedSignal("EquippedTitle"):Connect(function()
+		GiveTitle(player)
+	end)
+	
+	
+	
+	-- Save connections to our table
+	PlayerSessions[player] = connections
+end
+
+
+local function CleanupPlayer(player)
+	if PlayerSessions[player] then
+		print("Cleaning up " .. player.Name)
+		-- Disconnect all events for this specific player
+		for _, conn in ipairs(PlayerSessions[player]) do
+			conn:Disconnect()
+		end
+		PlayerSessions[player] = nil
+	end
+end
+
+function PlayerService.Start()
+	Players.PlayerAdded:Connect(SetupPlayer)
+
+	Players.PlayerRemoving:Connect(CleanupPlayer)
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		SetupPlayer(player)
+	end
+end
+
+function PlayerService.SetSpeed(speed, forAll : boolean, plr)
+	
+	if forAll then
+		for _, player in ipairs(Players:GetPlayers()) do
+			if player.Character then
+				local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+				if humanoid then
+					humanoid.WalkSpeed = speed
+				end
+			end
+		end
+	else
+		if plr.Character then
+			local humanoid = plr.Character:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				humanoid.WalkSpeed = speed
+			end
+		end
+	end
+	
+end
+
+
+function PlayerService.TeleportPlayers(_spawn : Vector3, player)
+	
+	if typeof(player) == "table" then
+		for _, plr in pairs(player) do
+			if plr.Character then
+				plr.Character.HumanoidRootPart.Position = _spawn
+				
+				if plr.Character:FindFirstChild("Humanoid") then
+					plr.Character.Humanoid.Health = plr.Character.Humanoid.MaxHealth
+				end
+				
+			end
+		end
+	else
+		if player.Character then
+			player.Character.HumanoidRootPart.Position = _spawn
+			
+			if player.Character:FindFirstChild("Humanoid") then
+				player.Character.Humanoid.Health = player.Character.Humanoid.MaxHealth
+			end
+			
+		end
+		
+	end
+	
+end
+
+function PlayerService.Init(Shared)
+	Services = Shared
+	print("Setting up Player Service")
+end
+
+return PlayerService

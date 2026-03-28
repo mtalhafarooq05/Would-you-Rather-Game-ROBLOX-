@@ -1,0 +1,22 @@
+local servicesFolder = script.Services
+local serviceContainer = {}
+
+for _, module in ipairs(servicesFolder:GetChildren()) do
+	if module:IsA("ModuleScript") then
+		serviceContainer[module.Name] = require(module)
+		if serviceContainer[module.Name].Init then
+			serviceContainer[module.Name].Init(serviceContainer)
+		end
+	end
+end
+
+for _, service in pairs(serviceContainer) do
+	if service.Start then
+		task.spawn(function()
+			service.Start()
+			print("Service started:", service)
+		end)
+	end
+end
+
+
